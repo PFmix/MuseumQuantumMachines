@@ -1,3 +1,14 @@
 #Short description
 The above codes are for the two parts of the board.
 The first part controls both the first and second Qubit, with the possibility to measure the second Qubit.
+
+The second part controls the last two Qubits, with the possibility to maximally entangle them or not. In this representation, the angle is proportional to the result of the measurements and when antangled, there is a 50% chance of these probabilities to be be inverted.
+For example, if I prepare the |00> state and hit entangled, the entangled state will be |00> + |11> such that after both measures, I have 50% chance to find 00, and 50% chance to find 11.
+If instead I start with (|0>+|1>)|0> and hit entangled, I will have |(|0>+|1>)(|0>+|1>)... which is not entangled as I cannot depict the state (|0>-|1>) with the servo I was using then. Within this imposed algebra, (|0>-|1>) identifies with (|0>+|1>) which leads to this kind of flaws. The other projects improve on this point in particulars.
+
+The main electronic components were:
+-2 Arduino Uno R4 Minima. Given the crucial use of pin Interrupts that could have made the board so much more responsive, I advice whoever is inspired by the code to choose a bigger (but pricier) boards with more pin interrupts.
+-4 grove Servo. Simple to use but faulty at many level. I do not recommend for this project.
+-2 Arduino shields, to use in conjunction with various premade circuitery for the other components. A good idea if you cannot solder. Unecessary if you can.
+-4 EC11 rotary encoder. There are cheap but not very precise. The homemade driver for the next project is slightly better that the one copy pasted from their wiki and used in this project (and also much simpler). None are reliable.
+-various push buttons and LEDs.
