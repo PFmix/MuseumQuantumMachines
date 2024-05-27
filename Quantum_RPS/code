@@ -1,0 +1,491 @@
+// For various reasons using https://github.com/HyodaKazuaki/Parallax-FeedBack-360-Servo-Control-Library-4-Arduino won't work for my purpose, so I writer a worse driver for the servo instead below, along with extra stuff I need
+#include <Servo.h>
+
+// These are data from the docs of Parallax, or after tests
+#define DELAY_ROTATION 50 //The smallest delay for the servo to react given everything else after tests
+#define MIDDLE_NOVELOCITY 1500 //Given by the doc of Parallax 360 and tested
+#define VELOCITY_2 1600 // Possibly the minimal value to reach speed 2 (counterclockwise)
+#define VELOCITY_m2 1400 // Possibly the minimal value to reach speed 2 (clockwise)
+#define TOLERANCE 4 //accepted precision in angle
+#define ANGLE_STEP 8 //average minimal step given the algo
+#define DC_MIN 29           // From Parallax spec sheet
+#define DC_MAX 971          // From Parallax spec sheet
+
+
+// define feedback signal pin and servo control pin
+// Convention is servo 1=PLAYER1, servo 2=PLAYER2, servo 3=ENTANGLEMENT
+#define FEEDBACK_PIN_PLAYER1 6
+#define SERVO_PIN_PLAYER1 5
+#define FEEDBACK_PIN_PLAYER2 8
+#define SERVO_PIN_PLAYER2 7
+const int FEEDBACK_PIN_ENTANGLEMENT =4;
+const int SERVO_PIN_ENTANGLEMENT =0;
+
+Servo servo_PLAYER1;
+Servo servo_PLAYER2;
+Servo servo_ENTANGLEMENT;
+
+
+// Name of the various pins for easier change
+const int encoderPinA = 3;
+const int encoderPinB = 2;
+const int encoderPinC = 1;
+
+const int pinLedGreen_Player1 = 9;
+const int pinLedRed_Player1 = 10;
+const int pinLedGreen_Player2 = 11;
+const int pinLedRed_Player2 = 12;
+
+const int pinLedBlue_1 = 14;
+const int pinLedBlue_2 = 15;
+const int pinLedBlue_3 = 16;
+const int pinLedBlue_4 = 17;
+
+// Initializing values
+int target_angle_Player1 = 0;
+int target_angle_Player2 = 0;
+int target_angle_Entanglement = 0;
+int Feedback_angle_Player1 = 0;
+int Feedback_angle_Player2 = 0;
+int Feedback_angle_Entanglement = 0;
+int gamephase = 0;
+
+
+// Useful for the encoder
+volatile int encoderValue = 0;
+int encoderValueCopy = 0;
+int encoderDiff =0;
+int encoderLast_reading= 0;
+
+//the random answer to the questions. Yes, there are hidden variables in this simulators ;)
+unsigned long myTime;
+int firstRandom = 0; // 0 means yes, 1 means no
+int secondRandom = 0;
+int entanglementRandom = 0;
+
+// -----the routines used -----
+
+// To turn an angle into its value between -180 and 180 modulo 360
+int modulo(int a) 
+{
+  int result = a % 360;
+  if (result > 180) {
+    result = result - 360;
+  }
+  else if (result <= -180)
+  {
+    result = result + 360;
+  }
+  return result;
+}
+
+// Gets the angle for the feedback, purposelly does not track the number of turns
+int GetServoAngle(int FeedbackPin)
+{
+  unsigned long tCycle = 0;
+  unsigned long tHigh = 0;
+  unsigned long tLow = 0;
+  float DC = 0;
+  float THETA = 0;
+
+  while(1) // Repeat until cycle time valid
+  {
+   tHigh = pulseIn(FeedbackPin, HIGH); // Measure high pulse
+   tLow = pulseIn(FeedbackPin, LOW); // Measure low pulse
+   tCycle = tHigh + tLow; // Calculate cycle time
+   if((tCycle > 1000) && (tCycle < 1200)) break; // Cycle time valid? Break!
+  }
+  DC = (1000 * tHigh) / tCycle; // Calculate duty cycle
+
+  THETA = ((DC - DC_MIN) * 360) / (DC_MAX - DC_MIN + 1); 
+  if (THETA<0){
+    THETA=0;
+  }
+  else if (THETA>359){
+    THETA=359;
+  }
+  THETA=round(THETA);
+  THETA=(int)THETA;
+  return THETA;
+}
+
+// This function roughly targets the desired angle given the feedback angle
+void RoughTrip(int servo_Number, int target_angle, int Feedback_angle)
+{
+  int error = modulo(target_angle-Feedback_angle);
+  //Serial.print("error");
+  //Serial.print(" ; ");
+  //Serial.println(error);
+  // Specific to Alice
+  if (servo_Number ==1)
+  {
+    if (abs(error) < ANGLE_STEP)
+    {
+      servo_PLAYER1.writeMicroseconds(MIDDLE_NOVELOCITY);
+      delay(DELAY_ROTATION);
+    }
+    else if (abs(error) >= ANGLE_STEP)
+    {
+      int number_cycles = error / ANGLE_STEP;
+      int i=0;
+      if (number_cycles > 0)
+      {
+        while(i <= number_cycles)
+        {
+        servo_PLAYER1.writeMicroseconds(1400);
+        delay(50);
+        servo_PLAYER1.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+      else if (number_cycles < 0)
+      {
+        while(i < abs(number_cycles)){
+        servo_PLAYER1.writeMicroseconds(1600);
+        delay(50);
+        servo_PLAYER1.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+    }
+  }
+  // Specific to Bob
+  else if (servo_Number ==2)
+  {
+    if (abs(error) < ANGLE_STEP)
+    {
+      servo_PLAYER2.writeMicroseconds(MIDDLE_NOVELOCITY);
+      delay(DELAY_ROTATION);
+    }
+    else if (abs(error) >= ANGLE_STEP)
+    {
+      int number_cycles = error / ANGLE_STEP;
+      int i=0;
+      if (number_cycles > 0)
+      {
+        while(i <= number_cycles)
+        {
+        servo_PLAYER2.writeMicroseconds(1400);
+        delay(50);
+        servo_PLAYER2.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+      else if (number_cycles < 0)
+      {
+        while(i <= abs(number_cycles)){
+        servo_PLAYER2.writeMicroseconds(1600);
+        delay(50);
+        servo_PLAYER2.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+    }
+  }
+   // Specific to Charlie
+  else if (servo_Number ==3)
+  {
+    if (abs(error) < ANGLE_STEP)
+    {
+      servo_ENTANGLEMENT.writeMicroseconds(MIDDLE_NOVELOCITY);
+      delay(DELAY_ROTATION);
+    }
+    else if (abs(error) >= ANGLE_STEP)
+    {
+      int number_cycles = error / ANGLE_STEP;
+      int i=0;
+      if (number_cycles > 0)
+      {
+        while(i <= number_cycles)
+        {
+        servo_ENTANGLEMENT.writeMicroseconds(1400);
+        delay(50);
+        servo_ENTANGLEMENT.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+      else if (number_cycles < 0)
+      {
+        while(i <= abs(number_cycles)){
+        servo_ENTANGLEMENT.writeMicroseconds(1600);
+        delay(50);
+        servo_ENTANGLEMENT.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+    }
+  }
+}
+
+// Initialization routine
+void initialization() 
+{
+  while(1)
+  {
+    RoughTrip(1, target_angle_Player1, Feedback_angle_Player1);
+    Feedback_angle_Player1 = GetServoAngle(FEEDBACK_PIN_PLAYER1);
+    if (abs(modulo(target_angle_Player1-Feedback_angle_Player1)) < ANGLE_STEP)
+    {
+      break;
+    }
+  }
+  while(1)
+  {
+    RoughTrip(2, target_angle_Player2, Feedback_angle_Player2);
+    Feedback_angle_Player2 = GetServoAngle(FEEDBACK_PIN_PLAYER2);
+    if (abs(modulo(target_angle_Player2-Feedback_angle_Player2)) < ANGLE_STEP)
+    {
+      break;
+    }
+  }
+  while(1)
+  {
+    RoughTrip(3, target_angle_Entanglement, Feedback_angle_Entanglement);
+    Feedback_angle_Entanglement = GetServoAngle(FEEDBACK_PIN_ENTANGLEMENT);
+    if (abs(modulo(target_angle_Entanglement-Feedback_angle_Entanglement)) < ANGLE_STEP)
+    {
+      break;
+    }
+  }
+}
+
+void updateEncoder(){
+  int MSB = digitalRead(encoderPinA); //MSB = most significant bit
+  int LSB = digitalRead(encoderPinB); //LSB = least significant bit
+
+  int encoded = (MSB << 1) |LSB; //converting the 2 pin value to single number
+  if((encoded == 1)){
+    encoderValue += 1;
+  }
+  if((encoded == 0)){
+    encoderValue += -1;
+  }
+  //Serial.print("encoderValue: ");
+  //Serial.println(encoderValue);
+}
+
+// setup the various ports
+void setup() {
+  //Serial.begin(9600);
+  //while (!Serial) {
+  //  ;  // wait for serial port to connect. Needed for native USB port only
+  //}
+  // set servo control pin number
+  servo_PLAYER1.attach(SERVO_PIN_PLAYER1);
+  servo_PLAYER2.attach(SERVO_PIN_PLAYER2);
+  servo_ENTANGLEMENT.attach(SERVO_PIN_ENTANGLEMENT);
+  pinMode(encoderPinA, INPUT);
+  pinMode(encoderPinB, INPUT);
+  attachInterrupt(digitalPinToInterrupt(encoderPinA), updateEncoder, FALLING);
+  digitalWrite(encoderPinB, HIGH);  //turn pullup resistor on
+  // Configure the button's pin for input signals.
+  pinMode(encoderPinC, INPUT);
+  // Configure the LED's pin for output.
+  pinMode(pinLedGreen_Player1, OUTPUT);
+  pinMode(pinLedRed_Player1, OUTPUT);
+  pinMode(pinLedGreen_Player2, OUTPUT);
+  pinMode(pinLedRed_Player2, OUTPUT);
+  pinMode(pinLedBlue_1, OUTPUT);
+  pinMode(pinLedBlue_2, OUTPUT);
+  pinMode(pinLedBlue_3, OUTPUT);
+  pinMode(pinLedBlue_4, OUTPUT);
+  // Set the servo at rest at the start
+  servo_PLAYER1.writeMicroseconds(MIDDLE_NOVELOCITY);
+  servo_PLAYER2.writeMicroseconds(MIDDLE_NOVELOCITY);
+  servo_ENTANGLEMENT.writeMicroseconds(MIDDLE_NOVELOCITY);
+  Feedback_angle_Player1 = GetServoAngle(FEEDBACK_PIN_PLAYER1);
+  Feedback_angle_Player2 = GetServoAngle(FEEDBACK_PIN_PLAYER2);
+  Feedback_angle_Entanglement = GetServoAngle(FEEDBACK_PIN_ENTANGLEMENT);
+  initialization();
+  digitalWrite(pinLedBlue_1, HIGH);
+  gamephase = 1;
+  myTime = millis();
+  randomSeed(myTime);
+}
+
+void loop()
+{
+  if (gamephase == 1)
+  {
+    noInterrupts();
+    encoderValueCopy = encoderValue;
+    encoderDiff = encoderValueCopy - encoderLast_reading;
+    encoderLast_reading = encoderValueCopy ;
+    interrupts();
+    RoughTrip(1, encoderDiff*ANGLE_STEP, 0);
+    Feedback_angle_Player1 = GetServoAngle(FEEDBACK_PIN_PLAYER1);
+    if ((!digitalRead(encoderPinC)))
+    {
+      digitalWrite(pinLedBlue_1, LOW);
+      digitalWrite(pinLedBlue_2, HIGH);
+      gamephase = 2;
+      delay(2000);
+    }
+  }
+  else if (gamephase == 2)
+  {
+    noInterrupts();
+    encoderValueCopy = encoderValue;
+    encoderDiff = encoderValueCopy - encoderLast_reading;
+    encoderLast_reading = encoderValueCopy ;
+    interrupts();
+    RoughTrip(2, encoderDiff*ANGLE_STEP, 0);
+    Feedback_angle_Player2 = GetServoAngle(FEEDBACK_PIN_PLAYER2);
+    if ((!digitalRead(encoderPinC)))
+    {
+      digitalWrite(pinLedBlue_2, LOW);
+      digitalWrite(pinLedBlue_3, HIGH);
+      gamephase = 3;
+      delay(2000);
+    }
+  }
+  else if (gamephase == 3)
+  {
+    noInterrupts();
+    encoderValueCopy = encoderValue;
+    encoderDiff = encoderValueCopy - encoderLast_reading;
+    encoderLast_reading = encoderValueCopy ;
+    interrupts();
+    RoughTrip(3, encoderDiff*ANGLE_STEP, 0);
+    Feedback_angle_Entanglement = GetServoAngle(FEEDBACK_PIN_ENTANGLEMENT);
+    if ((!digitalRead(encoderPinC)))
+    {
+      digitalWrite(pinLedBlue_3, LOW);
+      digitalWrite(pinLedBlue_4, HIGH);
+      gamephase = 4;
+      delay(2000);
+    }
+  }
+  else if (gamephase == 4)
+  {
+    firstRandom = random(0,101); // 0 means yes, 1 means no
+    secondRandom = random(0,101);
+    entanglementRandom = random(0,101);
+    if (abs(modulo(Feedback_angle_Entanglement))<=entanglementRandom)
+    {
+      if ((abs(modulo(Feedback_angle_Player1))<=firstRandom) && (abs(modulo(Feedback_angle_Player2))<=secondRandom))
+      {
+        target_angle_Player1 = 0;
+        target_angle_Player2 = 0;
+        initialization();
+        digitalWrite(pinLedBlue_1, HIGH);
+        digitalWrite(pinLedBlue_2, HIGH);
+        digitalWrite(pinLedBlue_3, HIGH);
+        digitalWrite(pinLedGreen_Player1, HIGH);
+        digitalWrite(pinLedGreen_Player2, HIGH);
+        gamephase = 0;
+      }
+      else if ((abs(modulo(Feedback_angle_Player1))>firstRandom) && (abs(modulo(Feedback_angle_Player2))<=secondRandom))
+      {
+        target_angle_Player1 = 180;
+        target_angle_Player2 = 0;
+        initialization();
+        digitalWrite(pinLedBlue_1, HIGH);
+        digitalWrite(pinLedBlue_2, HIGH);
+        digitalWrite(pinLedBlue_3, HIGH);
+        digitalWrite(pinLedRed_Player1, HIGH);
+        digitalWrite(pinLedGreen_Player2, HIGH);
+        gamephase = 0;
+      }
+      else if ((abs(modulo(Feedback_angle_Player1))<=firstRandom) && (abs(modulo(Feedback_angle_Player2))>secondRandom))
+      {
+        target_angle_Player1 = 0;
+        target_angle_Player2 = 180;
+        initialization();
+        digitalWrite(pinLedBlue_1, HIGH);
+        digitalWrite(pinLedBlue_2, HIGH);
+        digitalWrite(pinLedBlue_3, HIGH);
+        digitalWrite(pinLedGreen_Player1, HIGH);
+        digitalWrite(pinLedRed_Player2, HIGH);
+        gamephase = 0;
+      }
+      else
+      {
+        target_angle_Player1 = 180;
+        target_angle_Player2 = 180;
+        initialization();
+        digitalWrite(pinLedBlue_1, HIGH);
+        digitalWrite(pinLedBlue_2, HIGH);
+        digitalWrite(pinLedBlue_3, HIGH);
+        digitalWrite(pinLedRed_Player1, HIGH);
+        digitalWrite(pinLedRed_Player2, HIGH);
+        gamephase = 0;
+      }
+    }
+    else
+    {
+      if ((abs(modulo(Feedback_angle_Player1+180))<=firstRandom) && (abs(modulo(Feedback_angle_Player2+180))<=secondRandom))
+      {
+        target_angle_Player1 = 0;
+        target_angle_Player2 = 0;
+        initialization();
+        digitalWrite(pinLedBlue_1, HIGH);
+        digitalWrite(pinLedBlue_2, HIGH);
+        digitalWrite(pinLedBlue_3, HIGH);
+        digitalWrite(pinLedGreen_Player1, HIGH);
+        digitalWrite(pinLedGreen_Player2, HIGH);
+        gamephase = 0;
+      }
+      else if ((abs(modulo(Feedback_angle_Player1+180))>firstRandom) && (abs(modulo(Feedback_angle_Player2+180))<=secondRandom))
+      {
+        target_angle_Player1 = 180;
+        target_angle_Player2 = 0;
+        initialization();
+        digitalWrite(pinLedBlue_1, HIGH);
+        digitalWrite(pinLedBlue_2, HIGH);
+        digitalWrite(pinLedBlue_3, HIGH);
+        digitalWrite(pinLedRed_Player1, HIGH);
+        digitalWrite(pinLedGreen_Player2, HIGH);
+        gamephase = 0;
+      }
+      else if ((abs(modulo(Feedback_angle_Player1+180))<=firstRandom) && (abs(modulo(Feedback_angle_Player2+180))>secondRandom))
+      {
+        target_angle_Player1 = 0;
+        target_angle_Player2 = 180;
+        initialization();
+        digitalWrite(pinLedBlue_1, HIGH);
+        digitalWrite(pinLedBlue_2, HIGH);
+        digitalWrite(pinLedBlue_3, HIGH);
+        digitalWrite(pinLedGreen_Player1, HIGH);
+        digitalWrite(pinLedRed_Player2, HIGH);
+        gamephase = 0;
+      }
+      else
+      {
+        target_angle_Player1 = 180;
+        target_angle_Player2 = 180;
+        initialization();
+        digitalWrite(pinLedBlue_1, HIGH);
+        digitalWrite(pinLedBlue_2, HIGH);
+        digitalWrite(pinLedBlue_3, HIGH);
+        digitalWrite(pinLedRed_Player1, HIGH);
+        digitalWrite(pinLedRed_Player2, HIGH);
+        gamephase = 0;
+      }
+    }
+  }
+  else 
+  {
+    if ((!digitalRead(encoderPinC)))
+    {
+      target_angle_Player1 = 0;
+      target_angle_Player2 = 0;
+      initialization();
+      digitalWrite(pinLedBlue_2, LOW);
+      digitalWrite(pinLedBlue_3, LOW);
+      digitalWrite(pinLedBlue_4, LOW);
+      digitalWrite(pinLedGreen_Player1, LOW);
+      digitalWrite(pinLedGreen_Player2, LOW);
+      digitalWrite(pinLedRed_Player1, LOW);
+      digitalWrite(pinLedRed_Player2, LOW);
+      gamephase = 1;
+      delay(2000);
+    }
+  }
+}
