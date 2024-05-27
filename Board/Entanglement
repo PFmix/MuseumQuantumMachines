@@ -1,0 +1,207 @@
+/* The EC11 rotary encoder driver for Arduino is taken from
+  https://wiki.dfrobot.com/EC11_Rotary_Encoder_Module_SKU__SEN0235
+  below is a version working for the r4 minima and without the attachInterrupt that does work in principle
+*/
+#include <Servo.h>
+
+const int encoderPinA = 8;
+const int encoderPinB = 9;
+const int encoderPinA2 = 10;
+const int encoderPinB2 = 11;  //Do not use pin 12 and 13, they do not work for some reason
+
+const int pinLedGreen = 4;
+const int pinLedRed = 5;
+const int pinLedGreen2 = 6;
+const int pinLedRed2 = 7;
+const int pinLedBlue = 12;  // Find alternative ?
+
+const int pinButton = A0;
+const int pinButton2 = A1;
+const int pinButton3 = A2;
+
+
+int shaftPosition = 5;  // When the shaft reaches too low values, it loses alignement, in addition to making a lot of noise. Turns out among the many cheap servos, a lot are bad.
+int lastEncoded = 0;
+int encoderValue = 0;
+int shaftPosition2 = 5;
+int lastEncoded2 = 0;
+int encoderValue2 = 0;
+
+bool entangled = false;
+
+// Uses the Grove - Rotary Angle Sensor to control the position of the Grove - Servo.
+// Connect the Grove - Servo to the socket marked D5
+// Define the pins to which the servo and sensor are connected.
+const int pinServo = 2;
+const int pinServo2 = 3;
+// Use a Servo object to represent and control the servo.
+Servo groveServo;
+Servo groveServo2;  //Voltage is barely enough for two servo
+
+void updateEncoder() {
+  int MSB = digitalRead(encoderPinA);  //MSB = most significant bit
+  int LSB = digitalRead(encoderPinB);  //LSB = least significant bit
+
+  int encoded = (MSB << 1) | LSB;          //converting the 2 pin value to single number
+  int sum = (lastEncoded << 2) | encoded;  //adding it to the previous encoded value
+
+  if (sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoderValue++;
+  if (sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderValue--;
+
+  lastEncoded = encoded;  //store this value for next time
+}
+void updateEncoder2() {
+  int MSB2 = digitalRead(encoderPinA2);  //MSB = most significant bit
+  int LSB2 = digitalRead(encoderPinB2);  //LSB = least significant bit
+
+  int encoded2 = (MSB2 << 1) | LSB2;          //converting the 2 pin value to single number
+  int sum2 = (lastEncoded2 << 2) | encoded2;  //adding it to the previous encoded value
+
+  if (sum2 == 0b1101 || sum2 == 0b0100 || sum2 == 0b0010 || sum2 == 0b1011) encoderValue2++;
+  if (sum2 == 0b1110 || sum2 == 0b0111 || sum2 == 0b0001 || sum2 == 0b1000) encoderValue2--;
+
+  lastEncoded2 = encoded2;  //store this value for next time
+}
+
+void setup() {
+  pinMode(encoderPinA, INPUT);
+  pinMode(encoderPinB, INPUT);
+  digitalWrite(encoderPinA, HIGH);  //turn pullup resistor on
+  digitalWrite(encoderPinB, HIGH);  //turn pullup resistor on
+  groveServo.attach(pinServo);
+  pinMode(encoderPinA2, INPUT);
+  pinMode(encoderPinB2, INPUT);
+  digitalWrite(encoderPinA2, HIGH);  //turn pullup resistor on
+  digitalWrite(encoderPinB2, HIGH);  //turn pullup resistor on
+  groveServo2.attach(pinServo2);
+  // Configure the button's pin for input signals.
+  pinMode(pinButton, INPUT);
+  pinMode(pinButton2, INPUT);
+  pinMode(pinButton3, INPUT);
+  // Configure the LED's pin for output.
+  pinMode(pinLedGreen, OUTPUT);
+  pinMode(pinLedRed, OUTPUT);
+  pinMode(pinLedGreen2, OUTPUT);
+  pinMode(pinLedRed2, OUTPUT);
+  pinMode(pinLedBlue, OUTPUT);
+}
+
+
+
+void loop() {
+  // the servo only accepts values between 0 and 179; use the map()
+  // function as a linear conversion between the two ranges.
+  shaftPosition = max(5, min(179, shaftPosition + encoderValue));  //another note to self: servo do not do as many turns as they want, but are often locked to 180 degrees instead due to an internal potentiometer.
+  encoderValue = 0;
+
+  groveServo.write(shaftPosition);
+  if (digitalRead(pinButton3)) {
+    entangled = !entangled;
+    if (entangled) {
+      digitalWrite(pinLedBlue, HIGH);
+    } else {
+      digitalWrite(pinLedBlue, LOW);
+    }
+    delay(10);
+  }
+  // Use the Servo object to move the servo.
+  if (digitalRead(pinButton) && !entangled)  // When the button is pressed,
+  {
+    noInterrupts();  // the encoder is effectively disabled during 2 seconds
+    int proba = map(shaftPosition, 1, 179, 0, 100);
+
+    int randomNumber = random(0 + proba, 100 + proba);
+    if (randomNumber > 100) {
+      shaftPosition = 179;
+      groveServo.write(shaftPosition);
+      //  turn the Red LED on for 2 seconds.
+      digitalWrite(pinLedRed, HIGH);
+    } else {
+      shaftPosition = 1;
+      groveServo.write(shaftPosition);
+      // Otherwise, turn the Green LED on for 2 seconds.
+      digitalWrite(pinLedGreen, HIGH);
+    }
+    interrupts();  // the encoder is reactivated
+    delay(2000);
+    digitalWrite(pinLedGreen, LOW);
+    digitalWrite(pinLedRed, LOW);
+  } else if (digitalRead(pinButton) && entangled) {
+    int randomNumber3 = random(0, 100);
+    if (randomNumber3 > 49) {
+      shaftPosition = 179;
+      shaftPosition2 = 179 - shaftPosition2;
+      groveServo.write(shaftPosition);
+      groveServo2.write(shaftPosition2);
+      //  turn the Red LED on for 2 seconds.
+      digitalWrite(pinLedRed, HIGH);
+      entangled = !entangled;
+      digitalWrite(pinLedBlue, LOW);
+    } else {
+      shaftPosition = 1;
+      groveServo.write(shaftPosition);
+      // Otherwise, turn the Green LED on for 2 seconds.
+      digitalWrite(pinLedGreen, HIGH);
+      entangled = !entangled;
+      digitalWrite(pinLedBlue, LOW);
+    }
+    interrupts();  // the encoder is reactivated
+    delay(2000);
+    digitalWrite(pinLedGreen, LOW);
+    digitalWrite(pinLedRed, LOW);
+  }
+  updateEncoder();  //ideally done with attachInterrupt, but works (for me) only pin 2 and 3. According to some people, it also works with some other pins, but it never did for me.
+  // pin change interrupt was also an option, but finding the correct register names for the microcontroller of the arduino uno r4 minima was too daunting of a task for me, so I just gave up.
+  shaftPosition2 = max(5, min(179, shaftPosition2 + encoderValue2));
+  encoderValue2 = 0;
+  groveServo2.write(shaftPosition2);
+  // Use the Servo object to move the servo.
+  if (digitalRead(pinButton2) && !entangled)  // When the button is pressed,
+  {
+    noInterrupts();  // the encoder is effectively disabled during 2 seconds
+    int proba2 = map(shaftPosition2, 1, 179, 0, 100);
+
+    int randomNumber2 = random(0 + proba2, 100 + proba2);
+    if (randomNumber2 > 100) {
+      shaftPosition2 = 179;
+      groveServo2.write(shaftPosition2);
+      //  turn the Red LED on for 2 seconds.
+      digitalWrite(pinLedRed2, HIGH);
+    } else {
+      shaftPosition2 = 1;
+      groveServo2.write(shaftPosition2);
+      // Otherwise, turn the Green LED on for 2 seconds.
+      digitalWrite(pinLedGreen2, HIGH);
+    }
+
+    interrupts();  // the encoder is reactivated
+    delay(2000);
+    digitalWrite(pinLedGreen2, LOW);
+    digitalWrite(pinLedRed2, LOW);
+  } else if (digitalRead(pinButton2) && entangled) {
+    int randomNumber4 = random(0, 100);
+    if (randomNumber4 > 49) {
+      shaftPosition2 = 179;
+      shaftPosition = 179 - shaftPosition;
+      groveServo.write(shaftPosition);
+      groveServo2.write(shaftPosition2);
+      //  turn the Red LED on for 2 seconds.
+      digitalWrite(pinLedRed2, HIGH);
+      entangled = !entangled;
+      digitalWrite(pinLedBlue, LOW);
+    } else {
+      shaftPosition2 = 1;
+      groveServo2.write(shaftPosition2);
+      // Otherwise, turn the Green LED on for 2 seconds.
+      digitalWrite(pinLedGreen2, HIGH);
+      entangled = !entangled;
+      digitalWrite(pinLedBlue, LOW);
+    }
+    interrupts();  // the encoder is reactivated
+    delay(2000);
+    digitalWrite(pinLedGreen2, LOW);
+    digitalWrite(pinLedRed2, LOW);
+  }
+  updateEncoder2();
+  delay(5);  //need some delay, otherwise the servo goes crazy
+}
