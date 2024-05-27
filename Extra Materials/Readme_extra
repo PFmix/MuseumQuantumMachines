@@ -1,0 +1,4 @@
+#Description
+You may find here the circuitery blueprints for both the Quantum Rock paper scissors and the quantum teleporter.
+
+Note that two pairs of connections have been swaaped in both projects compared to the blueprint to best use the pin interrupt of the arduino Uno (the encoder is plugged into pins 2 and 3 in both cases in the final devices).
