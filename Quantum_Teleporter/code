@@ -1,0 +1,448 @@
+// For various reasons using https://github.com/HyodaKazuaki/Parallax-FeedBack-360-Servo-Control-Library-4-Arduino won't work for my purpose, so I writer a worse driver for the servo instead below, along with extra stuff I need
+#include <Servo.h>
+
+// These are data from the docs of Parallax, or after tests
+#define DELAY_ROTATION 50 //The smallest delay for the servo to react given everything else after tests
+#define MIDDLE_NOVELOCITY 1500 //Given by the doc of Parallax 360 and tested
+#define VELOCITY_2 1600 // Possibly the minimal value to reach speed 2 (counterclockwise)
+#define VELOCITY_m2 1400 // Possibly the minimal value to reach speed 2 (clockwise)
+#define TOLERANCE 4 //accepted precision in angle
+#define ANGLE_STEP 8 //average minimal step given the algo
+#define DC_MIN 29           // From Parallax spec sheet
+#define DC_MAX 971          // From Parallax spec sheet
+
+
+// define feedback signal pin and servo control pin
+// Convention is servo 1=ALICE, servo 2=BOB, servo 3=CHARLIE
+#define FEEDBACK_PIN_BOB 6
+#define SERVO_PIN_BOB 5
+#define FEEDBACK_PIN_ALICE 8
+#define SERVO_PIN_ALICE 7
+const int FEEDBACK_PIN_CHARLIE =1;
+const int SERVO_PIN_CHARLIE =0;
+
+Servo servo_BOB;
+Servo servo_ALICE;
+Servo servo_CHARLIE;
+
+
+// Name of the various pins for easier change
+const int encoderPinA = 2;
+const int encoderPinB = 3;
+const int encoderPinC = 4;
+
+const int pinButton_Is_Phi = 9;
+const int pinButton_Is_Plus = 10;
+const int pinButton_Z_Gate = 11;
+const int pinButton_X_Gate = 12;
+
+const int pinLedGreen_Is_Phi = 14;
+const int pinLedRed_Is_Phi = 15;
+const int pinLedGreen_Is_Plus = 16;
+const int pinLedRed_Is_Plus = 17;
+const int pinLedBlue_Bob = 18;
+const int pinLedBlue_Alice = 19;
+
+// Initializing values
+int target_angle_Alice = 0;
+int target_angle_Bob = 0;
+int target_angle_Charlie = 180;
+int Feedback_angle_Alice = 0;
+int Feedback_angle_Bob = 0;
+int Feedback_angle_Charlie = 0;
+
+bool entangled_Bell = true;
+bool entangled_Bob = false;
+bool unpushed_Is_Phi = true;
+bool unpushed_Is_Plus = true;
+int chosenAngle=0;
+
+// Useful for the encoder
+volatile int encoderValue = 0;
+int encoderValueCopy = 0;
+int encoderDiff =0;
+int encoderLast_reading= 0;
+
+//the random answer to the questions. Yes, there are hidden variables in this simulators ;)
+unsigned long myTime;
+int firstRandom = 0; // 0 means yes, 1 means no
+int secondRandom = 0;
+
+// -----the routines used -----
+
+// To turn an angle into its value between -180 and 180 modulo 360
+int modulo(int a) 
+{
+  int result = a % 360;
+  if (result > 180) {
+    result = result - 360;
+  }
+  else if (result <= -180)
+  {
+    result = result + 360;
+  }
+  return result;
+}
+
+// Gets the angle for the feedback, purposelly does not track the number of turns
+int GetServoAngle(int FeedbackPin)
+{
+  unsigned long tCycle = 0;
+  unsigned long tHigh = 0;
+  unsigned long tLow = 0;
+  float DC = 0;
+  float THETA = 0;
+
+  while(1) // Repeat until cycle time valid
+  {
+   tHigh = pulseIn(FeedbackPin, HIGH); // Measure high pulse
+   tLow = pulseIn(FeedbackPin, LOW); // Measure low pulse
+   tCycle = tHigh + tLow; // Calculate cycle time
+   if((tCycle > 1000) && (tCycle < 1200)) break; // Cycle time valid? Break!
+  }
+  DC = (1000 * tHigh) / tCycle; // Calculate duty cycle
+
+  THETA = ((DC - DC_MIN) * 360) / (DC_MAX - DC_MIN + 1); 
+  if (THETA<0){
+    THETA=0;
+  }
+  else if (THETA>359){
+    THETA=359;
+  }
+  THETA=round(THETA);
+  THETA=(int)THETA;
+  return THETA;
+}
+
+// This function roughly targets the desired angle given the feedback angle
+void RoughTrip(int servo_Number, int target_angle, int Feedback_angle)
+{
+  int error = modulo(target_angle-Feedback_angle);
+  //Serial.print("error");
+  //Serial.print(" ; ");
+  //Serial.println(error);
+  // Specific to Alice
+  if (servo_Number ==1)
+  {
+    if (abs(error) < ANGLE_STEP)
+    {
+      servo_ALICE.writeMicroseconds(MIDDLE_NOVELOCITY);
+      delay(DELAY_ROTATION);
+    }
+    else if (abs(error) >= ANGLE_STEP)
+    {
+      int number_cycles = error / ANGLE_STEP;
+      int i=0;
+      if (number_cycles > 0)
+      {
+        while(i <= number_cycles)
+        {
+        servo_ALICE.writeMicroseconds(1400);
+        delay(50);
+        servo_ALICE.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+      else if (number_cycles < 0)
+      {
+        while(i < abs(number_cycles)){
+        servo_ALICE.writeMicroseconds(1600);
+        delay(50);
+        servo_ALICE.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+    }
+  }
+  // Specific to Bob
+  else if (servo_Number ==2)
+  {
+    if (abs(error) < ANGLE_STEP)
+    {
+      servo_BOB.writeMicroseconds(MIDDLE_NOVELOCITY);
+      delay(DELAY_ROTATION);
+    }
+    else if (abs(error) >= ANGLE_STEP)
+    {
+      int number_cycles = error / ANGLE_STEP;
+      int i=0;
+      if (number_cycles > 0)
+      {
+        while(i <= number_cycles)
+        {
+        servo_BOB.writeMicroseconds(1400);
+        delay(50);
+        servo_BOB.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+      else if (number_cycles < 0)
+      {
+        while(i <= abs(number_cycles)){
+        servo_BOB.writeMicroseconds(1600);
+        delay(50);
+        servo_BOB.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+    }
+  }
+   // Specific to Charlie
+  else if (servo_Number ==3)
+  {
+    if (abs(error) < ANGLE_STEP)
+    {
+      servo_CHARLIE.writeMicroseconds(MIDDLE_NOVELOCITY);
+      delay(DELAY_ROTATION);
+    }
+    else if (abs(error) >= ANGLE_STEP)
+    {
+      int number_cycles = error / ANGLE_STEP;
+      int i=0;
+      if (number_cycles > 0)
+      {
+        while(i <= number_cycles)
+        {
+        servo_CHARLIE.writeMicroseconds(1400);
+        delay(50);
+        servo_CHARLIE.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+      else if (number_cycles < 0)
+      {
+        while(i <= abs(number_cycles)){
+        servo_CHARLIE.writeMicroseconds(1600);
+        delay(50);
+        servo_CHARLIE.writeMicroseconds(1500);
+        delay(50);
+        i+= 1;
+        }
+      }
+    }
+  }
+}
+
+// Initialization routine
+void initialization() 
+{
+  while(1)
+  {
+    RoughTrip(1, target_angle_Alice, Feedback_angle_Alice);
+    Feedback_angle_Alice = GetServoAngle(FEEDBACK_PIN_ALICE);
+    if (abs(modulo(target_angle_Alice-Feedback_angle_Alice)) < ANGLE_STEP)
+    {
+      break;
+    }
+  }
+  while(1)
+  {
+    RoughTrip(2, target_angle_Bob, Feedback_angle_Bob);
+    Feedback_angle_Bob = GetServoAngle(FEEDBACK_PIN_BOB);
+    if (abs(modulo(target_angle_Bob-Feedback_angle_Bob)) < ANGLE_STEP)
+    {
+      break;
+    }
+  }
+  while(1)
+  {
+    RoughTrip(3, target_angle_Charlie, Feedback_angle_Charlie);
+    Feedback_angle_Charlie = GetServoAngle(FEEDBACK_PIN_CHARLIE);
+    if (abs(modulo(target_angle_Charlie-Feedback_angle_Charlie)) < ANGLE_STEP)
+    {
+      break;
+    }
+  }
+}
+
+void updateEncoder(){
+  int MSB = digitalRead(encoderPinA); //MSB = most significant bit
+  int LSB = digitalRead(encoderPinB); //LSB = least significant bit
+
+  int encoded = (MSB << 1) |LSB; //converting the 2 pin value to single number
+  if((encoded == 1)){
+    encoderValue += 1;
+  }
+  if((encoded == 0)){
+    encoderValue += -1;
+  }
+  //Serial.print("encoderValue: ");
+  //Serial.println(encoderValue);
+}
+
+// setup the various ports
+void setup() {
+  //Serial.begin(9600);
+  //while (!Serial) {
+  //  ;  // wait for serial port to connect. Needed for native USB port only
+  //}
+  // set servo control pin number
+  servo_BOB.attach(SERVO_PIN_BOB);
+  servo_ALICE.attach(SERVO_PIN_ALICE);
+  servo_CHARLIE.attach(SERVO_PIN_CHARLIE);
+  pinMode(encoderPinA, INPUT);
+  pinMode(encoderPinB, INPUT);
+  attachInterrupt(digitalPinToInterrupt(encoderPinA), updateEncoder, FALLING);
+  digitalWrite(encoderPinB, HIGH);  //turn pullup resistor on
+  // Configure the button's pin for input signals.
+  pinMode(encoderPinC, INPUT);
+  pinMode(pinButton_Is_Phi, INPUT);
+  pinMode(pinButton_Is_Plus, INPUT);
+  pinMode(pinButton_Z_Gate, INPUT);
+  pinMode(pinButton_X_Gate, INPUT);
+  // Configure the LED's pin for output.
+  pinMode(pinLedGreen_Is_Phi, OUTPUT);
+  pinMode(pinLedRed_Is_Phi, OUTPUT);
+  pinMode(pinLedGreen_Is_Plus, OUTPUT);
+  pinMode(pinLedRed_Is_Plus, OUTPUT);
+  pinMode(pinLedBlue_Bob, OUTPUT);
+  pinMode(pinLedBlue_Alice, OUTPUT);
+  // Set the servo at rest at the start
+  servo_BOB.writeMicroseconds(MIDDLE_NOVELOCITY);
+  servo_ALICE.writeMicroseconds(MIDDLE_NOVELOCITY);
+  servo_CHARLIE.writeMicroseconds(MIDDLE_NOVELOCITY);
+  Feedback_angle_Alice = GetServoAngle(FEEDBACK_PIN_ALICE);
+  Feedback_angle_Bob = GetServoAngle(FEEDBACK_PIN_BOB);
+  Feedback_angle_Charlie = GetServoAngle(FEEDBACK_PIN_BOB);
+  initialization();
+  digitalWrite(pinLedBlue_Alice, HIGH);
+  myTime = millis();
+  randomSeed(myTime);
+}
+
+void loop() 
+{
+  if ((!digitalRead(pinButton_Is_Phi)))
+  {
+    firstRandom = random(0,2); // 0 means yes, 1 means no
+    unpushed_Is_Phi = false;//keeps track of if the measure is done
+  }
+  if ((!digitalRead(pinButton_Is_Plus)))
+  {
+    secondRandom = random(0,2);
+    unpushed_Is_Plus = false;//keeps track of if the measure is done
+  }
+  if (unpushed_Is_Phi && unpushed_Is_Plus)
+  {
+    noInterrupts();
+    encoderValueCopy = encoderValue;
+    encoderDiff = encoderValueCopy - encoderLast_reading;
+    encoderLast_reading = encoderValueCopy ;
+    interrupts();
+    RoughTrip(2, encoderDiff*ANGLE_STEP, 0);
+    Feedback_angle_Bob = GetServoAngle(FEEDBACK_PIN_BOB);
+    chosenAngle=Feedback_angle_Bob;
+  }
+  // The measure Is_Phi is attempted first
+  else if (entangled_Bell && (!unpushed_Is_Phi))
+  {
+    // First case, Is_Plus has not been asked, and it is a Phi
+    if ((!entangled_Bob) && unpushed_Is_Plus && (firstRandom==0))
+    {
+      target_angle_Alice = chosenAngle;
+      target_angle_Charlie = modulo(180 -chosenAngle);
+      initialization();
+      entangled_Bob = true;
+      digitalWrite(pinLedGreen_Is_Phi, HIGH);
+      digitalWrite(pinLedBlue_Bob, HIGH);
+    }
+    // Second case, Is_Plus has not been asked, and it is a Psi
+    else if ((!entangled_Bob) && unpushed_Is_Plus && (firstRandom==1))
+    {
+      target_angle_Alice = modulo(180 -chosenAngle);
+      target_angle_Charlie = chosenAngle;
+      initialization();
+      entangled_Bob = true;
+      digitalWrite(pinLedRed_Is_Phi, HIGH);
+      digitalWrite(pinLedBlue_Bob, HIGH);
+    }
+     //If Yes to everything
+    else if (entangled_Bell && (!unpushed_Is_Plus) && (firstRandom==0) && (secondRandom==0))
+    {
+      target_angle_Alice = 0;
+      target_angle_Bob =180;
+      target_angle_Charlie = chosenAngle;
+      initialization();
+      digitalWrite(pinLedGreen_Is_Plus, HIGH);
+      entangled_Bell = false;
+      digitalWrite(pinLedBlue_Alice, LOW);
+    }
+    // If no to Phi and yes to plus
+    else if (entangled_Bell && (!unpushed_Is_Plus) && (firstRandom==1) && (secondRandom==0))
+    {
+      target_angle_Alice = 0;
+      target_angle_Bob =0;
+      target_angle_Charlie = modulo(180-chosenAngle);
+      initialization();
+      digitalWrite(pinLedGreen_Is_Plus, HIGH);
+      entangled_Bell = false;
+      digitalWrite(pinLedBlue_Alice, LOW);
+    }
+    // If yes to Phi and no to plus
+    else if (entangled_Bell && (!unpushed_Is_Plus) && (firstRandom==0) && (secondRandom==1))
+    {
+      target_angle_Alice = 0;
+      target_angle_Bob =180;
+      target_angle_Charlie = 0-chosenAngle;
+      initialization();
+      digitalWrite(pinLedRed_Is_Plus, HIGH);
+      entangled_Bell = false;
+      digitalWrite(pinLedBlue_Alice, LOW);
+    }
+    // If no to Phi and no to plus
+    else if (entangled_Bell && (!unpushed_Is_Plus) && (firstRandom==1) && (secondRandom==1))
+    {
+      target_angle_Alice = 0;
+      target_angle_Bob =180;
+      target_angle_Charlie = modulo(-180+chosenAngle);
+      initialization();
+      digitalWrite(pinLedRed_Is_Plus, HIGH);
+      entangled_Bell = false;
+      digitalWrite(pinLedBlue_Alice, LOW);
+    }
+  }
+  // The measure Is_Plus is attempted first
+  else if (entangled_Bell && (!unpushed_Is_Plus))
+  {
+    // First case, Is_Phi has not been asked, and it is a Plus
+    if ((!entangled_Bob) && (secondRandom==0))
+    {
+      target_angle_Alice = 0;
+      target_angle_Charlie = 0;
+      initialization();
+      digitalWrite(pinLedGreen_Is_Plus, HIGH);
+      entangled_Bob = true;
+      digitalWrite(pinLedBlue_Bob, HIGH);
+    }
+    // Second case, Is_Phi has not been asked, and it is a Minus
+    if ((!entangled_Bob) && (secondRandom==1))
+    {
+      target_angle_Alice = 0;
+      target_angle_Charlie = 180;
+      initialization();
+      digitalWrite(pinLedRed_Is_Plus, HIGH);
+      entangled_Bob = true;
+      digitalWrite(pinLedBlue_Bob, HIGH);
+    }
+  }
+  else if (!entangled_Bell)
+  {
+    if ((!digitalRead(pinButton_Z_Gate)))
+    {
+      target_angle_Charlie = modulo(-Feedback_angle_Charlie);
+      initialization();
+      delay(100);
+    }
+    if ((!digitalRead(pinButton_X_Gate)))
+    {
+      target_angle_Charlie = modulo(180 + Feedback_angle_Charlie);
+      initialization();
+      delay(100);
+    }
+  }
+}
