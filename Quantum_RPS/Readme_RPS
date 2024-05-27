@@ -1,0 +1,20 @@
+#Description
+
+The idea of this "Quantum Rock Paper Scissors" game is to familiarize the users with the notion of entanglement through a game. The game has three interactive phases, and two non-interactive phases:
+-Phase 0 : at boot, all servo initialize to an angle of 0, then LED of phase 1 turn on.
+-Phase 1 : The first player set up their Qubit using the dial, then push the dial to move to phase 2. The phase 1 LED turns off, and the Phase 2 LED turns on instead.
+If theta is the trigonometric angle of the servo, the "state" in this representation is given by : |1-theta/180| |0> + theta/180 |1>, where the coefficients here are the algebraic probabilities, and only the coefficient in front of |1> can be negative.
+Yes, true quantum mechanics does not quite work this way, but it is acceptable for outreach.
+-Phase 2 : The second player sets up their Qubit using the dial, then push the dial to move to phase 3. The phase 2 LED turns off, and the Phase 3 LED turns on instead.
+In the proposed rules of the game, the two players do not see their adversaries Qubit.
+-Phase 3 : The two players discuss and find a consensus on how much entanglement to put between their two sates. If phi is the angle they chose, then the "entangles" state is: 
+|1-phi/180|(|1-theta_1/180| |0> + theta_1/180 |1>)(|1-theta_2/180| |0> + theta_2/180 |1>)+|phi/180|(|theta_1/180| |0> -sign(theta_1)|1-theta_1/180| |1>)(|theta_2/180| |0> -sign(theta_2)|1-theta_2/180| |1>)
+Pushing the dial will turn off the Phase 3 Led, on the Phase 4 leds, and move the game to Phase 4.
+-Phase 4 : The two states are measured according to the probabilities above (again, the coefficients are directly the probabilities in this representation). A state measured to be one makes the corresponding player wins. Green or red leds lights up to signify win or loss. The two players can both win or both lose! All phase Leds light up to signify that the game is over. Pushing the dial once more will send the device back to Phase 0.
+
+#Electrical components
+-1 Arduino Uno R4 Minima
+-1 EC11 Rotary Encoder
+-3 Parallax Feedback 360° High Speed Servo. Much better than the grove servo from the board project for many reasons, but also pricier. They barely work at the 5Ve provided by the arduino Uno, so I strongly suggest a change of board or an alternate power supply for further iteration. This flaw will lead to issue when the voltage drops.
+-various Leds and resistors.
+
