@@ -1,0 +1,12 @@
+#Description
+
+The device mimics the standard protocol for the Quantum teleportation of a single Qubit. The initial Bell state is |01>+|10> for presentation reasons. In this representation, the X gate is a rotation of 180°, while the Z gate is the inversion of the angle.
+
+#Bug
+-For some reason, rarely, the Z gate will acts as an X gate.
+
+#Electronic components:
+-1 Arduino Uno R4 Minima
+-1 EC11 Rotary Encoder
+-3 Parallax Feedback 360° High Speed servo
+-various leds, resistors, and push buttons
