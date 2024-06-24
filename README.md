@@ -18,7 +18,7 @@ All three parties belong to the University of Basel.
 
 # Acknowledgement
 The author acknowledges helpful suggestions from the Arduino forum (https://forum.arduino.cc/).
-The project was financed by...
+The project was financed by the Swiss National Science Foundation (SNSF) via the NCCR SPIN with grant number 51NF40-180604.
 
 # Licenses
 The projects themselves, as well as the provided pictures and diagrams, are licensed under Creative Commons Attribution Share Alike 4.0 International. The underlcode is under MIT License. The corresponding hardware is under CERN Open Hardware Licence Version 2 - Permissive license.
