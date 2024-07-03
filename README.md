@@ -3,7 +3,7 @@ Here are the codes and extra materials to build simple devices simulating Quantu
 
 # Description of the repositories
 The repository contain the code for Arduino and some extra material to build various devices simulating Quantum concepts for museum exhibit.
-They have been realized within the Outreach activities of the NCCR Spin project.
+They have been realized within the Outreach activities of the NCCR Spin project (www.nccr-spin.ch).
 
 There are three projects corresponding to three devices in total:
 -an interactive display "board" presenting the most basic concept of qubit, quantum superposition, and quantum entanglement;
