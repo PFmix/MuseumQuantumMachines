@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.12704448.svg)](http://dx.doi.org/10.5281/zenodo.12704448)
+
 # MuseumQuantumMachines
 Here are the codes and extra materials to build simple devices simulating Quantum concepts for museum displays.
 
